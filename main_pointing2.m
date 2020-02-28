@@ -1,5 +1,9 @@
 %% get geographical information from image label.
-mastcam_rootpath = '/Volumes/LaCie/data/pds-imaging.jpl.nasa.gov/data/msl/';
+if ismac
+    mastcam_rootpath = '/Volumes/LaCie/data/pds-imaging.jpl.nasa.gov/data/msl/';
+elseif isunix
+    mastcam_rootpath = '/Volume2/yuki/mastcam/data/pds-imaging.jpl.nasa.gov/data/msl/';
+end
 propMASTCAM = create_propMASTCAMbasename('SOL',475,'CAM_CODE','M[R]{1}',...
     'SEQ_ID',1888,'PRODUCT_TYPE','[DE]{1}','DATA_PROC_CODE','DRLX');
 
@@ -106,8 +110,8 @@ imxy_rov(:,is_lookback) = -imxy_rov(:,is_lookback);
 % Note that elevation in the telemetry.csv is up positive
 
 % get telemetry data
-lbl_telemetry = pds3lblread(joinPath(mastcam_rootpath,'/MSLPLC_1XXX/DATA/LOCALIZATIONS','telemetry.LBL'));
-telemetry = msl_telemetryCSVread(joinPath(mastcam_rootpath,'/MSLPLC_1XXX/DATA/LOCALIZATIONS','telemetry.csv'),lbl_telemetry);
+lbl_telemetry = pds3lblread(joinPath(mastcam_rootpath,'MSLPLC_1XXX/DATA/LOCALIZATIONS','telemetry.lbl'));
+telemetry = msl_telemetryCSVread(joinPath(mastcam_rootpath,'MSLPLC_1XXX/DATA/LOCALIZATIONS','telemetry.csv'),lbl_telemetry);
 site_telemetry = cat(1,telemetry.SITE);
 drive_telemetry = cat(1,telemetry.DRIVE);
 pose_telemetry = cat(1,telemetry.POSE);
@@ -145,17 +149,23 @@ imxy_rov0 = rov_rot_mat * imxy_rov;
 %==========================================================================
 % projection of ground reference coordinates to ROVER_NAV coordinate
 %==========================================================================
-geo_latitude_pc = DEdata.ddr.Latitude.img;
-geo_longitude   = DEdata.ddr.Longitude.img;
-geo_elevation   = DEdata.ddr.Elevation.img;
-L_geo = TRRIFdata.hdr.lines; S_geo = TRRIFdata.hdr.samples;
+% geo_latitude_pc = DEdata.ddr.Latitude.img;
+% geo_longitude   = DEdata.ddr.Longitude.img;
+% geo_elevation   = DEdata.ddr.Elevation.img;
+% L_geo = TRRIFdata.hdr.lines; S_geo = TRRIFdata.hdr.samples;
 
 % ----------------------------------------------------------
 % planetocentric coordinate to northing easting coordinates
 % ----------------------------------------------------------
 Re = 3396190; % meters ellipsoid radius
-geo_northing = Re .* (pi/180) .* geo_latitude_pc;
-geo_easting  = Re .* (pi/180) .* geo_longitude;
+% geo_northing = Re .* (pi/180) .* geo_latitude_pc;
+% geo_easting  = Re .* (pi/180) .* geo_longitude;
+
+basename_dem = 'MSL_Gale_DEM_Mosaic_1m_v3';
+dpath_dem = '/Volume2/yuki/mastcam/';
+hdr_dem = envihdrreadx(joinPath(dpath_dem,[basename_dem '.hdr']));
+geo_elevationl = lazyEnviReadl(joinPath(dpath_dem,[basename_dem '.img']),hdr_dem,1);
+
 
 % ------------------------------------------------------
 % northing easting to rover coordinate with no rotation

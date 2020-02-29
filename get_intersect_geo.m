@@ -3,6 +3,7 @@ function [imxyz_geo,imxyz_geo_ref,imxyz_geo_range] = get_intersect_geo(...
 
 is_gpu = false;
 precision = 'double';
+proc_page = false;
 if (rem(length(varargin),2)==1)
     error('Optional parameters should always go by pairs');
 else
@@ -12,6 +13,8 @@ else
                 is_gpu = varargin{i+1};
             case 'PRECISION'
                 precision = varargin{i+1};
+            case 'PAGE'
+                proc_page = varargin{i+1};
             otherwise
                 error('Unrecognized option: %s',varargin{i});
         end
@@ -149,35 +152,34 @@ for l = 27539 %1:len_vl
     if max_vs == valid_samples(end)==S_geo, max_vs = max_vs-1; end
     sidxes = min_vs:max_vs;
     for s=sidxes
+        % select three points
+        ppv11 = geol(:,1,s); % plane position vector
+        ppv12 = geol(:,1,s+1);
+        ppv13 = geol(:,2,s);
+        % idx_vert = [l,s;l,s+1;l+1,s];
+        ppv21 = geol(:,1,s+1);
+        ppv22 = geol(:,2,s+1);
+        ppv23 = geol(:,2,s);
+        ppv1 = cat(3,ppv11,ppv21); ppv2 = cat(3,ppv12,ppv22); ppv3 = cat(3,ppv13,ppv23);
+        % idx_vert = [l,s;l+1,s;l+1,s-1];
+        % test line segment intersect with the plane determined by the
+        % three points
+        [line_param,is_intersect] = line_plane_intersect_ldv(...
+                cam_C_geo,imxy_direc_geo_2d,ppv1,ppv2,ppv3,...
+                is_gpu,proc_page);
+        % if the line segment intersect with the plane, then test if the
+        % intersection is within the triangle or not.
+        % if is_intersect
+        pipv = cam_C_geo + imxy_direc_geo_2d.*line_param; % plane intersection position vector
+        [plane_param,is_in_face] = get_plane_param_coefficient(...
+            ppv1,ppv2,ppv3,pipv,precision,is_gpu,proc_page);
+
         for j=1:2
-            % select three points
-            if j==1
-                ppv1 = geol(:,1,s); % plane position vector
-                ppv2 = geol(:,1,s+1);
-                ppv3 = geol(:,2,s);
-                % idx_vert = [l,s;l,s+1;l+1,s];
-            elseif j==2
-                ppv1 = geol(:,1,s+1);
-                ppv2 = geol(:,2,s+1);
-                ppv3 = geol(:,2,s);
-                % idx_vert = [l,s;l+1,s;l+1,s-1];
-            end
-            % test line segment intersect with the plane determined by the
-            % three points
-            [line_param,is_intersect] = line_plane_intersect_ldv(...
-                    cam_C_geo,imxy_direc_geo_2d,ppv1,ppv2,ppv3);
-            % if the line segment intersect with the plane, then test if the
-            % intersection is within the triangle or not.
-            % if is_intersect
-            pipv = cam_C_geo + imxy_direc_geo_2d.*line_param; % plane intersection position vector
-            [plane_param,is_in_face] = get_plane_param_coefficient(ppv1,ppv2,ppv3,pipv,precision,is_gpu);
-            % else
-            %     is_in_face = false;
-            % end
-            imls_update = find(and(is_intersect, and( is_in_face, line_param < imxyz_geo_range )));
-            imxyz_geo(:,imls_update) = pipv(:,imls_update);
+            imls_update = find(and(is_intersect(:,:,j), ...
+                and( is_in_face(:,:,j), line_param(:,:,j) < imxyz_geo_range )));
+            imxyz_geo(:,imls_update) = pipv(:,imls_update,j);
             imxyz_geo_ref(:,imls_update) = repmat([s;l;j],[1,length(imls_update)]);
-            imxyz_geo_range(imls_update) = line_param(imls_update);
+            imxyz_geo_range(imls_update) = line_param(imls_update,j);
         end
     end
 end

@@ -4,8 +4,9 @@ if ismac
 elseif isunix
     mastcam_rootpath = '/Volume2/yuki/mastcam/data/pds-imaging.jpl.nasa.gov/data/msl/';
 end
-propMASTCAM = create_propMASTCAMbasename('SOL',475,'CAM_CODE','M[R]{1}',...
-    'SEQ_ID',1888,'PRODUCT_TYPE','[DE]{1}','DATA_PROC_CODE','DRLX');
+propMASTCAM = create_propMASTCAMbasename('SOL',25,'CAM_CODE','M[R]{1}',...
+    'SEQ_ID',123,'PRODUCT_TYPE','[DE]{1}','DATA_PROC_CODE','DRLX',...
+    'unique_CDPID',698);
 
 [match_list] = mastcam_product_search(propMASTCAM);
 site_id_list = cat(1,match_list.ROVER_MOTION_COUNTER_SITE);
@@ -71,6 +72,13 @@ else
     % fprintf('(site,drive,pose) = (%d, %d, %d)\n', site_id, drive_id, pose_id);
 end
 
+im_size = [L_im, S_im];
+cmmdl = [];
+cmmdl.C = cmmdl_C;
+cmmdl.A = cmmdl_A;
+cmmdl.H = cmmdl_H;
+cmmdl.V = cmmdl_V;
+
 %%
 %==========================================================================
 % Get camera pointing vector for each camera image pixel (x_im, y_im)
@@ -78,26 +86,29 @@ end
 %==========================================================================
 % get a [x_im,y_im] in the image coordinate
 S_im = lbl.OBJECT_IMAGE.LINE_SAMPLES; L_im = lbl.OBJECT_IMAGE.LINES;
-imx_im_1d = 1:S_im;
-imy_im_1d = reshape(1:L_im,[],1);
-[imx_im,imy_im] = meshgrid(imx_im_1d,imy_im_1d);
+[imxy_rov] = get_3d_pointing_from_CAHV([L_im,S_im],cmmdl);
 
-imxy_im_2d = permute(reshape(cat(2,imx_im,imy_im),[L_im*S_im,2]),[2,3,1]);
 
-% compute pointing of each pixel in rover coordinate.
-% this is done by matrix inversion.
-HmXAt = cmmdl_H - cmmdl_A .* imxy_im_2d(1,:,:);
-VmYAt = cmmdl_V - cmmdl_V .* imxy_im_2d(2,:,:);
-M = cat(1,HmXAt,VmYAt,repmat([0 0 1],1,1,size(imxy_im_2d,3)));
-h = cat(1,mmx('mult',HmXAt,cmmdl_C'),mmx('mult',VmYAt,cmmdl_C'),repmat([1],1,1,size(imxy_im_2d,3)));
-% p_xy = pagefun(@ldivide,M,h);
-imxy_rov = permute(mmx('backslash',M,h),[1,3,2]);
-
-% normalization
-imxy_rov = normalizevec(imxy_rov,1,'normtype',2);
-% check the direction by taking innerdots with camera axis.
-is_lookback = (cmmdl_A * imxy_rov)<0;
-imxy_rov(:,is_lookback) = -imxy_rov(:,is_lookback);
+% imx_im_1d = 1:S_im;
+% imy_im_1d = reshape(1:L_im,[],1);
+% [imx_im,imy_im] = meshgrid(imx_im_1d,imy_im_1d);
+% 
+% imxy_im_2d = permute(reshape(cat(2,imx_im,imy_im),[L_im*S_im,2]),[2,3,1]);
+% 
+% % compute pointing of each pixel in rover coordinate.
+% % this is done by matrix inversion.
+% HmXAt = cmmdl_H - cmmdl_A .* imxy_im_2d(1,:,:);
+% VmYAt = cmmdl_V - cmmdl_V .* imxy_im_2d(2,:,:);
+% M = cat(1,HmXAt,VmYAt,repmat([0 0 1],1,1,size(imxy_im_2d,3)));
+% h = cat(1,mmx('mult',HmXAt,cmmdl_C'),mmx('mult',VmYAt,cmmdl_C'),repmat([1],1,1,size(imxy_im_2d,3)));
+% % p_xy = pagefun(@ldivide,M,h);
+% imxy_rov = permute(mmx('backslash',M,h),[1,3,2]);
+% 
+% % normalization
+% imxy_rov = normalizevec(imxy_rov,1,'normtype',2);
+% % check the direction by taking innerdots with camera axis.
+% is_lookback = (cmmdl_A * imxy_rov)<0;
+% imxy_rov(:,is_lookback) = -imxy_rov(:,is_lookback);
     
 %%
 %==========================================================================
@@ -109,31 +120,43 @@ imxy_rov(:,is_lookback) = -imxy_rov(:,is_lookback);
 %  +Z: nadir, pointing down 
 % Note that elevation in the telemetry.csv is up positive
 
-% get telemetry data
-lbl_telemetry = pds3lblread(joinPath(mastcam_rootpath,'MSLPLC_1XXX/DATA/LOCALIZATIONS','telemetry.lbl'));
-telemetry = msl_telemetryCSVread(joinPath(mastcam_rootpath,'MSLPLC_1XXX/DATA/LOCALIZATIONS','telemetry.csv'),lbl_telemetry);
-site_telemetry = cat(1,telemetry.SITE);
-drive_telemetry = cat(1,telemetry.DRIVE);
-pose_telemetry = cat(1,telemetry.POSE);
-loc_telemetry = [site_telemetry drive_telemetry pose_telemetry];
+[rover_nav_coord] = get_rover_nav_coord(site_id,drive_id,pose_id);
+rov_rot_mat = get_rot_mat(rover_nav_coord.ov_roll,rover_nav_coord.rov_pitch,rover_nav_coord.rov_yaw);
 
-% search matching (site,drive,pose) from the telemetry
-i_telemetry = find(all(loc_telemetry == [site_id, drive_id, pose_id],2));
-rover_nav_coord = telemetry(i_telemetry);
-
-% get ROVER_NAV coordinate
-rov_plc_latitude = rover_nav_coord.PLANETOCENTRIC_LATITUDE;
-rov_longitude = rover_nav_coord.LONGITUDE;
-rov_northing = rover_nav_coord.NORTHING;
-rov_easting = rover_nav_coord.EASTING;
-rov_elevation = rover_nav_coord.ELEVATION;
-rov_roll = rover_nav_coord.ROLL;
-rov_pitch = rover_nav_coord.PITCH;
-rov_yaw = rover_nav_coord.YAW;
-
-% compute rotation matrix
-rov_rot_mat = get_rot_mat(rov_roll,rov_pitch, rov_yaw);
-rov_rot_mat_inv = inv(rov_rot_mat);
+% % get telemetry data
+% lbl_telemetry = pds3lblread(joinPath(mastcam_rootpath,'MSLPLC_1XXX/DATA/LOCALIZATIONS','telemetry.lbl'));
+% telemetry = msl_telemetryCSVread(joinPath(mastcam_rootpath,'MSLPLC_1XXX/DATA/LOCALIZATIONS','telemetry.csv'),lbl_telemetry);
+% site_telemetry = cat(1,telemetry.SITE);
+% drive_telemetry = cat(1,telemetry.DRIVE);
+% pose_telemetry = cat(1,telemetry.POSE);
+% loc_telemetry = [site_telemetry drive_telemetry pose_telemetry];
+% 
+% % search matching (site,drive,pose) from the telemetry
+% i_telemetry = find(all(loc_telemetry == [site_id, drive_id, pose_id],2));
+% rover_nav_coord = telemetry(i_telemetry);
+% 
+% % get ROVER_NAV coordinate
+% rov_plc_latitude = rover_nav_coord.PLANETOCENTRIC_LATITUDE;
+% rov_longitude = rover_nav_coord.LONGITUDE;
+% rov_northing = rover_nav_coord.NORTHING;
+% rov_easting = rover_nav_coord.EASTING;
+% rov_elevation = rover_nav_coord.ELEVATION;
+% rov_roll = rover_nav_coord.ROLL;
+% rov_pitch = rover_nav_coord.PITCH;
+% rov_yaw = rover_nav_coord.YAW;
+% 
+% % compute rotation matrix
+% rov_rot_mat = get_rot_mat(rov_roll,rov_pitch, rov_yaw);
+% rov_rot_mat_inv = inv(rov_rot_mat);
+% 
+% % Get rover coordinate
+% rover_nav = [];
+% rover_nav.northing  = rov_northing; 
+% rover_nav.easting   = rov_easting;
+% rover_nav.elevation = rov_elevation;
+% rover_nav.roll      = rov_roll;
+% rover_nav.pitch     = rov_pitch;
+% rover_nav.yaw       = rov_yaw;
 
 %%
 %==========================================================================
@@ -149,22 +172,17 @@ imxy_rov0 = rov_rot_mat * imxy_rov;
 %==========================================================================
 % projection of ground reference coordinates to ROVER_NAV coordinate
 %==========================================================================
-% geo_latitude_pc = DEdata.ddr.Latitude.img;
-% geo_longitude   = DEdata.ddr.Longitude.img;
-% geo_elevation   = DEdata.ddr.Elevation.img;
-% L_geo = TRRIFdata.hdr.lines; S_geo = TRRIFdata.hdr.samples;
+geo_latitude_pc = DEdata.ddr.Latitude.img;
+geo_longitude   = DEdata.ddr.Longitude.img;
+geo_elevation   = DEdata.ddr.Elevation.img;
+L_geo = TRRIFdata.hdr.lines; S_geo = TRRIFdata.hdr.samples;
 
 % ----------------------------------------------------------
 % planetocentric coordinate to northing easting coordinates
 % ----------------------------------------------------------
 Re = 3396190; % meters ellipsoid radius
-% geo_northing = Re .* (pi/180) .* geo_latitude_pc;
-% geo_easting  = Re .* (pi/180) .* geo_longitude;
-
-basename_dem = 'MSL_Gale_DEM_Mosaic_1m_v3';
-dpath_dem = '/Volume2/yuki/mastcam/';
-hdr_dem = envihdrreadx(joinPath(dpath_dem,[basename_dem '.hdr']));
-geo_elevationl = lazyEnviReadl(joinPath(dpath_dem,[basename_dem '.img']),hdr_dem,1);
+geo_northing = Re .* (pi/180) .* geo_latitude_pc;
+geo_easting  = Re .* (pi/180) .* geo_longitude;
 
 
 % ------------------------------------------------------
@@ -195,6 +213,19 @@ geo_im_FOV = and(and(all(geo_im>-200,3),geo_im(:,:,1)<S_im+200),geo_im(:,:,2)<L_
 
 geo_im_FOV_mask = and(right_dir,geo_im_FOV);
 geo_im_FOV_mask_1nan = convertBoolTo1nan(geo_im_FOV_mask);
+
+%%
+% evaluation of DEM
+basename_dem = 'MSL_Gale_DEM_Mosaic_1m_v3';
+if ismac
+    dpath_dem = '/Volumes/LaCie/data/';
+elseif isunix
+    dpath_dem = '/Volume2/yuki/mastcam/';
+end
+% hdr_dem = envihdrreadx(joinPath(dpath_dem,[basename_dem '.hdr']));
+% geo_elevationl = lazyEnviReadl(joinPath(dpath_dem,[basename_dem '.img']),hdr_dem,1);
+
+[geo_im_FOV_mask] = get_geo_im_FOV(basename_dem,dpath_dem,rover_nav_coord,cmmdl,im_size);
 
 
 %%

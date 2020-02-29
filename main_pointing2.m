@@ -110,7 +110,11 @@ rov_rot_mat_inv = get_rot_mat_inv(rover_nav_coord.ROLL,rover_nav_coord.PITCH,rov
 % the reference coordinate Site.
 cmmdl_A_rov0 = rov_rot_mat * cmmdl_A';
 cmmdl_C_rov0 = rov_rot_mat * cmmdl_C';
-imxy_direc_rov0 = mmx('mult', rov_rot_mat, imxy_direc_rov);
+% imxy_direc_rov0 = mmx('mult', rov_rot_mat, imxy_direc_rov);
+rov_rot_mat = gpuArray(rov_rot_mat); imxy_direc_rov = gpuArray(imxy_direc_rov);
+imxy_direc_rov0 = pagefun(@mtimes, rov_rot_mat, imxy_direc_rov);
+[rov_rot_mat,imxy_direc_rov,imxy_direc_rov0] = gather(rov_rot_mat,imxy_direc_rov,imxy_direc_rov0);
+
 cmmdl_C_geo = cmmdl_C_rov0 + [rover_nav_coord.NORTHING; 
                               rover_nav_coord.EASTING;
                               -rover_nav_coord.ELEVATION];
@@ -137,8 +141,8 @@ end
 % image field of view, so it will be sufficient to take the field of view
 % defined in the last section.
 imxy_direc_rov0_2d = reshape(imxy_direc_rov0,[3,L_im*S_im]);
-[imxyz_geo,imxyz_geo_ref,imxyz_geo_range] = get_intersect_geo(cmmdl_C_geo,...
-    imxy_direc_rov0_2d,basename_dem,dpath_dem,geo_im_FOV_mask);
+tic; [imxyz_geo,imxyz_geo_ref,imxyz_geo_range] = get_intersect_geo(cmmdl_C_geo,...
+    imxy_direc_rov0_2d,basename_dem,dpath_dem,geo_im_FOV_mask,'gpu',1); toc;
 
 
 

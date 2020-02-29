@@ -1,4 +1,4 @@
-function [imxy_direc_rov] = get_3d_pointing_from_CAHV(im_size,cmmdl)
+function [imxy_direc_rov] = get_3d_pointing_from_CAHV(im_size,cmmdl,varargin)
 % [imxy_rov] = get_3d_pointing_from_CAHV(im_size,cmmdl)
 % Get camera pointing vector for each camera image pixel (x_im, y_im)
 % using camera CAHV model
@@ -9,6 +9,21 @@ function [imxy_direc_rov] = get_3d_pointing_from_CAHV(im_size,cmmdl)
 %   imxy_direc_rov: [3 x L_im x S_im] matrix. Directional vectors showing
 %   pointing for the reference coordinate system. Each vector is
 %   normalized.
+
+is_gpu = false;
+
+if (rem(length(varargin),2)==1)
+    error('Optional parameters should always go by pairs');
+else
+    for i=1:2:(length(varargin)-1)
+        switch upper(varargin{i})
+            case 'GPU'
+                is_gpu = varargin{i+1};
+            otherwise
+                error('Unrecognized option: %s',varargin{i});
+        end
+    end
+end
 
 L_im = im_size(1); S_im = im_size(2);
 cmmdl_C = cmmdl.C;
@@ -31,7 +46,13 @@ M = cat(1,HmXAt,VmYAt,repmat([1 1 1],1,1,size(imxy_im_2d,3)));
 h = repmat(reshape([0 0 1],[],1),[1,1,L_im*S_im]);
 % h = cat(1,mmx('mult',HmXAt,cmmdl_C'),mmx('mult',VmYAt,cmmdl_C'),repmat([1],1,1,size(imxy_im_2d,3)));
 % p_xy = pagefun(@ldivide,M,h);
-imxy_direc_rov = permute(mmx('backslash',M,h),[1,3,2]);
+if is_gpu
+    M = gpuArray(M); h = gpuArray(h);
+    imxy_direc_rov = permute(pagefun(@mldivide,M,h),[1,3,2]);
+    [M,h,imxy_direc_rov] = gather(M,h,imxy_direc_rov);
+else
+    imxy_direc_rov = permute(mmx('backslash',M,h),[1,3,2]);
+end
 
 % normalization
 imxy_direc_rov = normalizevec(imxy_direc_rov,1,'normtype',2);

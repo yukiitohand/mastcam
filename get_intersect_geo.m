@@ -4,7 +4,7 @@ function [imxyz_geo,imxyz_geo_ref,imxyz_geo_range] = get_intersect_geo(...
 
 is_gpu = false;
 precision = 'double';
-proc_page = false;
+% proc_page = false;
 batch_size = 10;
 if (rem(length(varargin),2)==1)
     error('Optional parameters should always go by pairs');
@@ -15,8 +15,6 @@ else
                 is_gpu = varargin{i+1};
             case 'PRECISION'
                 precision = varargin{i+1};
-            case 'PAGE'
-                proc_page = varargin{i+1};
             case 'BATCH_SIZE'
                 batch_size = varargin{i+1};
             otherwise
@@ -25,6 +23,7 @@ else
     end
 end
 
+proc_page = batch_size>1;
 
 if is_gpu
     gpu_varargin = {'gpuArray'};
@@ -94,13 +93,8 @@ if is_gpu
 end
 
 len_vl = length(valid_lines);
-% counter = 0;
 for li = 1:len_vl
     tic;
-%     if floor(li*100/len_vl/5) > counter
-%         fprintf('*');
-%         counter = counter + 1;
-%     end
     l = valid_lines(li);
     %==========================================================================
     % projection of ground reference coordinates to ROVER_NAV coordinate
@@ -126,7 +120,7 @@ for li = 1:len_vl
     geol_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l);
     geolp1_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l+1);
     
-    geol_imxy = reshape(permute(cat(3,geol_imxy,geolp1_imxy),[1,3,2]),[3,2*S_geo]);
+    geol_imxy = reshape(permute(cat(3,geol_imxy,geolp1_imxy),[1,3,2]),[2,2*S_geo]);
     
     geol_2d = reshape(geol,[3,1,2*S_geo]);
     
@@ -136,42 +130,14 @@ for li = 1:len_vl
 % 
     valid_samples = find(geo_im_FOV_mask(l,:));
     % valid_samples = setdiff(valid_samples,[S_geo]); % remove the last index
-    min_vs = valid_samples(1); max_vs = valid_samples(end);
+    min_vs = max(valid_samples(1)-1,1); max_vs = valid_samples(end);
     if max_vs == valid_samples(end)==S_geo, max_vs = max_vs-1; end
-    sidxes2 = (2*min_vs-1):(2*max_vs);
+    sidxes2 = (2*(min_vs)-1):(2*(max_vs));
     ppv1s = ppv1s(:,:,sidxes2);
     ppv2s = ppv2s(:,:,sidxes2);
     ppv3s = ppv3s(:,:,sidxes2);
-    n_batch = ceil(length(sidxes2)/batch_size);
-%     
-%     [line_param,is_intersect] = line_plane_intersect_ldv(...
-%                 cam_C_geo,imxy_direc_geo_2d,ppv1,ppv2,ppv3);
-%     % if the line segment intersect with the plane, then test if the
-%     % intersection is within the triangle or not.
-%     % if is_intersect
-%     pipv = cam_C_geo + imxy_direc_geo_2d.*line_param; % plane intersection position vector
-%     [plane_param,is_in_face] = get_plane_param_coefficient(ppv1,ppv2,ppv3,pipv);
-%     % else
-%     %     is_in_face = false;
-%     % end
-%     line_param = line_param .* convertBoolTo1nan(is_in_face) .* convertBoolTo1nan(is_intersect);
-%     [line_param_1d,intersect_s] = min(line_param,[],3);
-%     intersect_s(isnan(line_param_1d)) = nan;
-%     
-%     imls_update = find(and(~isnan(intersect_s),line_param_1d<imxyz_geo_range));
-%     
-%     for imi_ls = imls_update
-%         imxyz_geo(:,imi_ls) = pipv(:,imi_ls,intersect_s(imi_ls));
-%         s_ref = ceil(intersect_s(imi_ls)/2); j_ref = intersect_s(imi_ls) - 2*(s_ref-1);
-%         imxyz_geo_ref(:,imi_ls) = [s_ref,l,j_ref];
-%         imxyz_geo_range(imi_ls) = line_param_1d(imi_ls);
-%     end
+    n_batch = ceil((length(sidxes2))/batch_size);
 
-    % valid_samples = find(geo_im_FOV_mask(l,:));
-    % valid_samples = setdiff(valid_samples,[S_geo]); % remove the last index
-    % min_vs = valid_samples(1); max_vs = valid_samples(end);
-    % if max_vs == valid_samples(end)==S_geo, max_vs = max_vs-1; end
-    % sidxes = min_vs:max_vs;
     for ni = 1:n_batch
         if ni~=n_batch
             sidx2 = (1+batch_size*(ni-1)):(batch_size*ni);
@@ -179,45 +145,45 @@ for li = 1:len_vl
             sidx2 = (1+batch_size*(ni-1)):length(sidxes2);
         end
         ppv1 = ppv1s(:,:,sidx2); ppv2 = ppv2s(:,:,sidx2); ppv3 = ppv3s(:,:,sidx2);
-        ppv_imxy = geol_imxy(:,sidxes2([sidx2 sidx2(end)+1 sidx2(end)+2]));
+        ppv_imxy = geol_imxy(:,[sidxes2(sidx2) sidxes2(sidx2(end))+[1 2]]);
+        % if sidx2(end)<(length(sidxes2)-1)
+        %     ppv_imxy = geol_imxy(:,sidxes2([sidx2 sidx2(end)+[1 2]]));
+        % elseif sidx2(end)==(length(sidxes2)-1)
+        %     ppv_imxy = geol_imxy(:,[sidxes2([sidx2 sidx2(end)+1]) sidxes2(end)+1]);
+        % elseif sidx2(end)==length(sidxes2)
+        %     ppv_imxy = geol_imxy(:,[sidxes2(sidx2) sidxes2(end)+[1 2]]);
+        % end
+        % ppv_imxy = geol_imxy(:,sidxes2([sidx2 sidx2(end)+1 sidx2(end)+2]));
         
         xy_min = ceil(min(ppv_imxy,[],2));
         xy_max = floor(max(ppv_imxy,[],2));
+        xy_min = min(max(xy_min,[1;1]),[S_im;L_im]); xy_max = max(min(xy_max,[S_im;L_im]),[1;1]);
         x_list = xy_min(1):xy_max(1); y_list = xy_min(2):xy_max(2);
         idx_xy2d_list = L_im*(x_list-1) + y_list';
         idx_xy2d_list = idx_xy2d_list(:);
         
-        imxy_direc_geo_focus = imxy_direc_geo_2d(:,idx_xy2d_list);
+        imxy_direc_geo_2d_focus = imxy_direc_geo_2d(:,idx_xy2d_list);
         
-        % select three points
-        % ppv11 = geol(:,1,s); % plane position vector
-        % ppv12 = geol(:,1,s+1);
-        % ppv13 = geol(:,2,s);
-        % idx_vert = [l,s;l,s+1;l+1,s];
-        % ppv21 = geol(:,1,s+1);
-        % ppv22 = geol(:,2,s+1);
-        % ppv23 = geol(:,2,s);
-        % ppv1 = cat(3,ppv11,ppv21); ppv2 = cat(3,ppv12,ppv22); ppv3 = cat(3,ppv13,ppv23);
-        % idx_vert = [l,s;l+1,s;l+1,s-1];
         % test line segment intersect with the plane determined by the
         % three points
         [line_param,is_intersect] = line_plane_intersect_ldv(...
-                cam_C_geo,imxy_direc_geo_focus,ppv1,ppv2,ppv3,...
+                cam_C_geo,imxy_direc_geo_2d_focus,ppv1,ppv2,ppv3,...
                 is_gpu,proc_page);
         % if the line segment intersect with the plane, then test if the
         % intersection is within the triangle or not.
         % if is_intersect
-        pipv = cam_C_geo + imxy_direc_geo.*line_param; % plane intersection position vector
+        pipv = cam_C_geo + imxy_direc_geo_2d_focus.*line_param; % plane intersection position vector
         [plane_param,is_in_face] = get_plane_param_coefficient(...
             ppv1,ppv2,ppv3,pipv,precision,is_gpu,proc_page);
 
         for j=1:length(sidx2)
-            imls_update = find(and(is_intersect(:,:,j), ...
-                and( is_in_face(:,:,j), line_param(:,:,j) < imxyz_geo_range )));
-            imxyz_geo(:,imls_update) = pipv(:,imls_update,j);
-            s_ref = ceil(sidxes2(sidx2(j))/2); j_ref = sidxes2(sidx2(j)) - 2*(s_ref-1);
-            imxyz_geo_ref(:,imls_update) = repmat([s_ref;l;j_ref],[1,length(imls_update)]);
-            imxyz_geo_range(imls_update) = line_param(imls_update,j);
+            imls_update = find(and( is_in_face(:,:,j), line_param(:,:,j) < imxyz_geo_range(:,idx_xy2d_list) ));
+            if ~isempty(imls_update)
+                imxyz_geo(:,imls_update) = pipv(:,imls_update,j);
+                s_ref = ceil(sidxes2(sidx2(j))/2); j_ref = sidxes2(sidx2(j)) - 2*(s_ref-1);
+                imxyz_geo_ref(:,imls_update) = repmat([s_ref;l;j_ref],[1,length(imls_update)]);
+                imxyz_geo_range(imls_update) = line_param(1,imls_update,j);
+            end
         end
     end
     toc;

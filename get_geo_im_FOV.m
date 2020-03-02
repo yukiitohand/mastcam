@@ -112,7 +112,7 @@ if save_imxy
     envihdrwritex(hdr_out,joinPath(dpath_dem, [basename_dem '_imxy.hdr']));
 end
 
-geol_rov0 = zeros(3,S_geo);
+geol_rov0 = zeros(3,S_geo,precision,gpu_varargin{:});
 geol_rov0(2,:) = geo_rov0_easting;
 for l = 1:L_geo
     %==========================================================================

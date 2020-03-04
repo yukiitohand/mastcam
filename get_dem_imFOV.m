@@ -1,5 +1,5 @@
-function [dem_im_FOV_mask] = get_dem_im_FOV(basename_dem,dpath_dem,rover_nav_coord,cmmdl,im_size,varargin)
-% [dem_im_FOV_mask] = get_dem_im_FOV(basename_dem,dpath_dem,rover_nav_coord,cmmdl,im_size,varargin)
+function [dem_imFOV_mask] = get_dem_imFOV(basename_dem,dpath_dem,rover_nav_coord,cmmdl,im_size,varargin)
+% [dem_im_FOV_mask] = get_dem_imFOV(basename_dem,dpath_dem,rover_nav_coord,cmmdl,im_size,varargin)
 %   evaluate FOV of an image on an ortho-georeferenced image using a
 %   georeferenced DEM image.
 %  INPUTS:
@@ -20,7 +20,7 @@ function [dem_im_FOV_mask] = get_dem_im_FOV(basename_dem,dpath_dem,rover_nav_coo
 %    im_size     : size of the image [L_im, S_im] for which FOV is
 %                  evaluated.
 %  OUTPUTS
-%    dem_im_FOV_mask: boolean image, true if in the FOV, false otherwise.
+%    dem_imFOV_mask: boolean image, true if in the FOV, false otherwise.
 
 is_gpu = false;
 precision = 'double';
@@ -97,7 +97,7 @@ dem_rov0_northing = dem_geo_northing - rov_northing;
 dem_rov0_easting = dem_geo_easting - rov_easting;
 
 % Perform line by line operation
-dem_im_FOV_mask = false(L_dem,S_dem,gpu_varargin{:});
+dem_imFOV_mask = false(L_dem,S_dem,gpu_varargin{:});
 
 deml_rov0 = zeros(3,S_dem,precision,gpu_varargin{:});
 deml_rov0(2,:) = dem_rov0_easting;
@@ -126,11 +126,11 @@ for l = 1:L_dem
     right_dir = (cmmdl_A * deml_rov_m_cmmdl_C) > -1; % safeguard
 
     deml_im = (cmmdl_HV_mat * deml_rov_m_cmmdl_C) ./ (cmmdl_A * deml_rov_m_cmmdl_C); % 2 x S_geo
-    deml_im_FOV = and(and(all(deml_im>-200,1),deml_im(1,:)<S_im+200),deml_im(2,:)<L_im+200);
+    deml_imFOV = and(and(all(deml_im>-200,1),deml_im(1,:)<S_im+200),deml_im(2,:)<L_im+200);
 
-    deml_im_FOV_mask = and(right_dir,deml_im_FOV);
+    deml_imFOV_mask = and(right_dir,deml_imFOV);
     
-    dem_im_FOV_mask(l,:) = deml_im_FOV_mask;
+    dem_imFOV_mask(l,:) = deml_imFOV_mask;
     
 end
 

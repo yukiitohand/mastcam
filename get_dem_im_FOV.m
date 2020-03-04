@@ -1,4 +1,4 @@
-function [geo_im_FOV_mask] = get_geo_im_FOV(basename_dem,dpath_dem,rover_nav_coord,cmmdl,im_size,varargin)
+function [geo_im_FOV_mask] = get_dem_im_FOV(basename_dem,dpath_dem,rover_nav_coord,cmmdl,im_size,varargin)
 % [geo_im_FOV_mask] = get_geo_im_FOV(basename_dem,dpath_dem,rover_nav,cmmdl,im_size)
 %   evaluate FOV of an image on an ortho-georeferenced image using a
 %   georeferenced DEM image.

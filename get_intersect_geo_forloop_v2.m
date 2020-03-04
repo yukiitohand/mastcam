@@ -1,11 +1,12 @@
-function [imxyz_geo,imxyz_geo_ref,imxyz_geo_range] = get_intersect_geo_forloop_v2(...
-    cam_C_geo,im_size,basename_dem,dpath_dem,geo_im_FOV_mask,...
+function [imxyz_geo,imxyz_geo_ref,imxyz_geo_range] = get_im_geo_from_dem(...
+    cam_C_geo,im_size,basename_dem,dpath_dem,dem_imFOV_mask,...
     basename_dem_imxy,dpath_dem_imxy,varargin)
 
 is_gpu = false;
 precision = 'double';
-basename_dem = '';
-dpath_dem    = '';
+% basename_dem = '';
+% dpath_dem    = '';
+proc_page = 0;
 if (rem(length(varargin),2)==1)
     error('Optional parameters should always go by pairs');
 else
@@ -21,7 +22,7 @@ else
     end
 end
 
-proc_page = batch_size>1;
+% proc_page = batch_size>1;
 
 L_im = im_size(1); S_im = im_size(2);
 
@@ -33,7 +34,7 @@ end
 
 if is_gpu
     cam_C_geo = gpuArray(cam_C_geo);
-    geo_im_FOV_mask = gpuArray(geo_im_FOV_mask);
+    dem_imFOV_mask = gpuArray(dem_imFOV_mask);
 end
 
 switch lower(precision)
@@ -56,21 +57,21 @@ cam_C_geo = reshape(cam_C_geo,[],1);
 hdr_dem = envihdrreadx(joinPath(dpath_dem,[basename_dem '.hdr']));
 demimg_path = joinPath(dpath_dem,[basename_dem '.img']);
 L_geo = hdr_dem.lines; S_geo = hdr_dem.samples;
-geo_northing   = reshape(hdr_dem.y,1,L_geo,1);
-geol_easting    = reshape(hdr_dem.x,1,1,S_geo);
+dem_northing   = reshape(hdr_dem.y,1,L_geo,1);
+deml_easting    = reshape(hdr_dem.x,1,1,S_geo);
 
 if is_gpu
-    geo_northing = gpuArray(geo_northing);
-    geol_easting = gpuArray(geol_easting);
+    dem_northing = gpuArray(dem_northing);
+    deml_easting = gpuArray(deml_easting);
 end
 
 switch lower(precision)
     case 'double'
-        geo_northing = double(geo_northing);
-        geol_easting = double(geol_easting);
+        dem_northing = double(dem_northing);
+        deml_easting = double(deml_easting);
     case 'single'
-        geo_northing = single(geo_northing);
-        geol_easting = single(geol_easting);
+        dem_northing = single(dem_northing);
+        deml_easting = single(deml_easting);
 end
 
 
@@ -86,31 +87,31 @@ imxyz_geo_range = inf(1,L_im*S_im,precision,gpu_varargin{:});
 % if the whole line is outside of FOV, skip
 % it is important to take the any in the dimension 1.
 % last line is also removed because of the implementation we did.
-valid_lines = any(geo_im_FOV_mask',1); valid_lines(L_geo) = false;
+valid_lines = any(dem_imFOV_mask',1); valid_lines(L_geo) = false;
 valid_lines = find(valid_lines);
 if is_gpu
     valid_lines = gather(valid_lines);
 end
 
-geol = nan(3,2,S_geo,precision,gpu_varargin{:});
+deml = nan(3,2,S_geo,precision,gpu_varargin{:});
 if is_gpu
-    geol = gpuArray(geol);
+    deml = gpuArray(deml);
 end
-geol(2,:,:) = repmat(geol_easting,[1,2,1]);
+deml(2,:,:) = repmat(deml_easting,[1,2,1]);
 
 len_vl = length(valid_lines);
 for li = 1:len_vl % l = 27270 
-    tic;
+    %tic;
     l = valid_lines(li);
     %==========================================================================
     % projection of ground reference coordinates to ROVER_NAV coordinate
     %==========================================================================
     % get geographical information from 
     % geol_northing   = repmat(geo_northing(:,[l l+1],:),[1,1,S_geo]);
-    geol(1,:,:) = repmat(geo_northing(:,[l l+1],:),[1,1,S_geo]);
-    geol_elevation  = lazyEnviReadl(demimg_path,hdr_dem,l);
-    geolp1_elevation = lazyEnviReadl(demimg_path,hdr_dem,l+1);
-    geol(3,:,:) = permute(cat(1, -geol_elevation, -geolp1_elevation),[3,1,2]);
+    deml(1,:,:) = repmat(dem_northing(:,[l l+1],:),[1,1,S_geo]);
+    deml_elevation  = lazyEnviReadl(demimg_path,hdr_dem,l);
+    demlp1_elevation = lazyEnviReadl(demimg_path,hdr_dem,l+1);
+    deml(3,:,:) = permute(cat(1, -deml_elevation, -demlp1_elevation),[3,1,2]);
 
     % geol = cat(1, geol_northing, repmat(geol_easting,[1,2,1]),...
     %     permute(cat(1, -geol_elevation, -geolp1_elevation),[3,1,2]) );
@@ -125,12 +126,12 @@ for li = 1:len_vl % l = 27270
     % end
     
     % get supporting information from _imxy
-    geol_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l-hdr_dem_imxy.line_offset);
-    geolp1_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l-hdr_dem_imxy.line_offset+1);
+    deml_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l-hdr_dem_imxy.line_offset);
+    demlp1_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l-hdr_dem_imxy.line_offset+1);
     
-    geol_imxy = permute( cat(3,geol_imxy,geolp1_imxy),[1,3,2]);
+    deml_imxy = permute( cat(3,deml_imxy,demlp1_imxy),[1,3,2]);
 
-    valid_samples = find(geo_im_FOV_mask(l,:));
+    valid_samples = find(dem_imFOV_mask(l,:));
     if valid_samples(end) == S_geo
         valid_samples = valid_samples(1:end-1);
     end
@@ -138,26 +139,26 @@ for li = 1:len_vl % l = 27270
     for s = valid_samples
         for j=1:2
             if j==1
-                ppv1 = geol_imxy(:,1,s); % plane position vector in image space
-                ppv2 = geol_imxy(:,1,s+1);
-                ppv3 = geol_imxy(:,2,s);
-                ppv1_geo = geol(:,1,s); % plane position vector
-                ppv2_geo = geol(:,1,s+1);
-                ppv3_geo = geol(:,2,s);
-                % ppv_xyList = [geol_imxy(:,1,s) geol_imxy(:,1,s+1) geol_imxy(:,2,s)];
+                ppv1 = deml_imxy(:,1,s); % plane position vector in image space
+                ppv2 = deml_imxy(:,1,s+1);
+                ppv3 = deml_imxy(:,2,s);
+                ppv1_geo = deml(:,1,s); % plane position vector
+                ppv2_geo = deml(:,1,s+1);
+                ppv3_geo = deml(:,2,s);
             elseif j==2
-                ppv1 = geol_imxy(:,1,s+1);
-                ppv2 = geol_imxy(:,2,s+1);
-                ppv3 = geol_imxy(:,2,s);
-                ppv1_geo = geol(:,1,s+1);
-                ppv2_geo = geol(:,2,s+1);
-                ppv3_geo = geol(:,2,s);
-                % ppv_xyList = [geol_imxy(:,1,s+1) geol_imxy(:,2,s+1) geol_imxy(:,2,s)];
+                ppv1 = deml_imxy(:,1,s+1);
+                ppv2 = deml_imxy(:,2,s+1);
+                ppv3 = deml_imxy(:,2,s);
+                ppv1_geo = deml(:,1,s+1);
+                ppv2_geo = deml(:,2,s+1);
+                ppv3_geo = deml(:,2,s);
             end
             ppv_xyList = [ppv1 ppv2 ppv3];
+            
             if any(isnan(ppv_xyList(:)))
                 continue;
             end
+            
             xy_min = ceil(min(ppv_xyList,[],2));
             xy_max = floor(max(ppv_xyList,[],2));
 
@@ -166,18 +167,7 @@ for li = 1:len_vl % l = 27270
             idx_xy2d_list = L_im*(x_list-1) + y_list';
             idx_xy2d_list = idx_xy2d_list(:);
 
-            % imxy_direc_geo_2d_focus = imxy_direc_geo_2d(:,idx_xy2d_list);
-
-            % test line segment intersect with the plane determined by the
-            % three points
-            % [line_param,is_intersect] = line_plane_intersect_ldv(...
-            %        cam_C_geo,imxy_direc_geo_2d_focus,ppv1,ppv2,ppv3,...
-            %        is_gpu,proc_page);
-            % if the line segment intersect with the plane, then test if the
-            % intersection is within the triangle or not.
-            % if is_intersect
-            % pipv = cam_C_geo + imxy_direc_geo_2d_focus.*line_param; % plane intersection position vector
-            % pipv = imxy_im_2d;
+            % test if the intersection is within the triangle or not.
             [plane_param,is_in_face] = get_plane_param_coefficient(...
                 ppv1,ppv2,ppv3,imxy_im_2d(:,idx_xy2d_list),precision,is_gpu,proc_page);
             
@@ -193,7 +183,7 @@ for li = 1:len_vl % l = 27270
             end
         end
     end
-    toc;
+    % toc;
 end
 
 if is_gpu

@@ -6,7 +6,7 @@ function [imxy_direc_rov] = get_3d_pointing_from_CAHV(im_size,cmmdl,varargin)
 %   im_size: [L_im, S_im], size of the image
 %   cmmdl: struct of CAHV camera model, fields are 'C','A','H','V'
 % OUTPUTS
-%   imxy_direc_rov: [3 x L_im x S_im] matrix. Directional vectors showing
+%   imxy_direc_rov: [L_im x S_im x 3] matrix. Directional vectors showing
 %   pointing for the reference coordinate system. Each vector is
 %   normalized.
 
@@ -60,6 +60,6 @@ imxy_direc_rov = normalizevec(imxy_direc_rov,1,'normtype',2);
 is_lookback = (cmmdl_A * imxy_direc_rov)<0;
 imxy_direc_rov(:,is_lookback) = -imxy_direc_rov(:,is_lookback);
 
-imxy_direc_rov = reshape(imxy_direc_rov,3,L_im,S_im);
+imxy_direc_rov = permute(reshape(imxy_direc_rov,3,L_im,S_im),[2,3,1]);
 
 end

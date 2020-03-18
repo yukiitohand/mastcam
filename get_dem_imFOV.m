@@ -109,6 +109,7 @@ for l = 1:L_dem
     if is_gpu
         deml_elevation = gpuArray(deml_elevation);
     end
+    deml_elevation(deml_elevation==hdr_dem.data_ignore_value) = nan;
     
     % ---------------------------------------------------------------------
     % northing easting to rover coordinate with no rotation
@@ -127,14 +128,23 @@ for l = 1:L_dem
 
     deml_im = (cmmdl_HV_mat * deml_rov_m_cmmdl_C) ./ (cmmdl_A * deml_rov_m_cmmdl_C); % 2 x S_geo
     deml_imFOV = and(and(all(deml_im>-200,1),deml_im(1,:)<S_im+200),deml_im(2,:)<L_im+200);
-
     deml_imFOV_mask = and(right_dir,deml_imFOV);
+    deml_imFOV_tooclose = sqrt(sum(deml_rov_m_cmmdl_C.^2,1)) < 50;
     
-    dem_imFOV_mask(l,:) = deml_imFOV_mask;
+    dem_imFOV_mask(l,:) = or(deml_imFOV_mask,deml_imFOV_tooclose);
     
 end
 
 fclose(fid_demimg);
+
+% safeguard
+for l=1:L_dem
+    dem_imFOV_mask(l,:) = conv(dem_imFOV_mask(l,:),[1 1 1],'same')>0;
+end
+
+for s=1:S_dem
+    dem_imFOV_mask(:,s) = conv(dem_imFOV_mask(:,s),[1;1;1],'same')>0;
+end
 
 
 end

@@ -1,11 +1,9 @@
 function [imxyz_geo,imxyz_geo_ref,imxyz_geo_range] = get_im_geo_from_dem(...
     cam_C_geo,im_size,basename_dem,dpath_dem,dem_imFOV_mask,...
-    basename_dem_imxy,dpath_dem_imxy,varargin)
+    dem_imxy,hdr_dem_imxy,varargin)
 
 is_gpu = false;
 precision = 'double';
-% basename_dem = '';
-% dpath_dem    = '';
 proc_page = 0;
 if (rem(length(varargin),2)==1)
     error('Optional parameters should always go by pairs');
@@ -74,12 +72,6 @@ switch lower(precision)
         deml_easting = single(deml_easting);
 end
 
-
-% dem imxy images
-hdr_dem_imxy = envihdrreadx(joinPath(dpath_dem_imxy,[basename_dem_imxy '.hdr']));
-dem_imxy_img_path = joinPath(dpath_dem_imxy,[basename_dem_imxy '.img']);
-
-
 imxyz_geo = nan(3,L_im*S_im,precision,gpu_varargin{:});
 imxyz_geo_ref = nan(3,L_im*S_im,precision,gpu_varargin{:});
 imxyz_geo_range = inf(1,L_im*S_im,precision,gpu_varargin{:});
@@ -87,17 +79,18 @@ imxyz_geo_range = inf(1,L_im*S_im,precision,gpu_varargin{:});
 % if the whole line is outside of FOV, skip
 % it is important to take the any in the dimension 1.
 % last line is also removed because of the implementation we did.
-valid_lines = any(dem_imFOV_mask',1); valid_lines(L_geo) = false;
+valid_lines = any(dem_imFOV_mask',1);
 valid_lines = find(valid_lines);
+valid_lines = valid_lines(1:end-1);
 if is_gpu
     valid_lines = gather(valid_lines);
 end
 
-deml = nan(3,2,S_geo,precision,gpu_varargin{:});
+deml_geo = nan(3,2,S_geo,precision,gpu_varargin{:});
 if is_gpu
-    deml = gpuArray(deml);
+    deml_geo = gpuArray(deml_geo);
 end
-deml(2,:,:) = repmat(deml_easting,[1,2,1]);
+deml_geo(2,:,:) = repmat(deml_easting,[1,2,1]);
 
 len_vl = length(valid_lines);
 for li = 1:len_vl % l = 27270 
@@ -108,50 +101,35 @@ for li = 1:len_vl % l = 27270
     %==========================================================================
     % get geographical information from 
     % geol_northing   = repmat(geo_northing(:,[l l+1],:),[1,1,S_geo]);
-    deml(1,:,:) = repmat(dem_northing(:,[l l+1],:),[1,1,S_geo]);
+    deml_geo(1,:,:) = repmat(dem_northing(:,[l l+1],:),[1,1,S_geo]);
     deml_elevation  = lazyEnviReadl(demimg_path,hdr_dem,l);
     demlp1_elevation = lazyEnviReadl(demimg_path,hdr_dem,l+1);
-    deml(3,:,:) = permute(cat(1, -deml_elevation, -demlp1_elevation),[3,1,2]);
-
-    % geol = cat(1, geol_northing, repmat(geol_easting,[1,2,1]),...
-    %     permute(cat(1, -geol_elevation, -geolp1_elevation),[3,1,2]) );
-    % if is_gpu
-    %     geol = gpuArray(geol);
-    % end
-    % switch lower(precision)
-    %     case 'double'
-    %         geol = double(geol);
-    %     case 'single'
-    %         geol = single(geol);
-    % end
+    deml_geo(3,:,:) = permute(cat(1, -deml_elevation, -demlp1_elevation),[3,1,2]);
     
-    % get supporting information from _imxy
-    deml_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l-hdr_dem_imxy.line_offset);
-    demlp1_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l-hdr_dem_imxy.line_offset+1);
-    
-    deml_imxy = permute( cat(3,deml_imxy,demlp1_imxy),[1,3,2]);
+    deml_imxy = permute( dem_imxy([l l+1]-hdr_dem_imxy.line_offset,:,:),[3,1,2]);
 
     valid_samples = find(dem_imFOV_mask(l,:));
-    if valid_samples(end) == S_geo
+    if valid_samples(end) == (hdr_dem_imxy.samples+hdr_dem_imxy.sample_offset)
         valid_samples = valid_samples(1:end-1);
     end
 
     for s = valid_samples
+        s_dem_imxy = s - hdr_dem_imxy.sample_offset;
         for j=1:2
             if j==1
-                ppv1 = deml_imxy(:,1,s); % plane position vector in image space
-                ppv2 = deml_imxy(:,1,s+1);
-                ppv3 = deml_imxy(:,2,s);
-                ppv1_geo = deml(:,1,s); % plane position vector
-                ppv2_geo = deml(:,1,s+1);
-                ppv3_geo = deml(:,2,s);
+                ppv1 = deml_imxy(:,1,s_dem_imxy); % plane position vector in image space
+                ppv2 = deml_imxy(:,1,s_dem_imxy+1);
+                ppv3 = deml_imxy(:,2,s_dem_imxy);
+                ppv1_geo = deml_geo(:,1,s); % plane position vector
+                ppv2_geo = deml_geo(:,1,s+1);
+                ppv3_geo = deml_geo(:,2,s);
             elseif j==2
-                ppv1 = deml_imxy(:,1,s+1);
-                ppv2 = deml_imxy(:,2,s+1);
-                ppv3 = deml_imxy(:,2,s);
-                ppv1_geo = deml(:,1,s+1);
-                ppv2_geo = deml(:,2,s+1);
-                ppv3_geo = deml(:,2,s);
+                ppv1 = deml_imxy(:,1,s_dem_imxy+1);
+                ppv2 = deml_imxy(:,2,s_dem_imxy+1);
+                ppv3 = deml_imxy(:,2,s_dem_imxy);
+                ppv1_geo = deml_geo(:,1,s+1);
+                ppv2_geo = deml_geo(:,2,s+1);
+                ppv3_geo = deml_geo(:,2,s);
             end
             ppv_xyList = [ppv1 ppv2 ppv3];
             

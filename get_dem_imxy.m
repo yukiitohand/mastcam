@@ -1,4 +1,4 @@
-function [dem_imxy,hdr_dem_imxy] = get_dem_imxy(basename_dem,dpath_dem,rover_nav_coord,cmmdl,dem_im_FOV_mask,varargin)
+function [dem_imxy,hdr_dem_imxy,dem_geo] = get_dem_imxy(basename_dem,dpath_dem,rover_nav_coord,cmmdl,dem_im_FOV_mask,varargin)
 % [dem_imxy,hdr_dem_imxy] = get_dem_imxy(basename_dem,dpath_dem,rover_nav_coord,cmmdl,geo_im_FOV_mask,varargin)
 %   evaluate FOV of an image on an ortho-georeferenced image using a
 %   georeferenced DEM image.
@@ -115,6 +115,8 @@ deml_rov0(2,:) = geo_rov0_easting(valid_samples);
 
 dem_imxy = nan(len_vl,len_vs,2);
 
+dem_geo = nan(len_vl,len_vs,3);
+
 hdr_dem_imxy = hdr_dem;
 hdr_dem_imxy.interleave = 'bil';
 hdr_dem_imxy.bands = 2;
@@ -140,6 +142,7 @@ for li = 1:len_vl
     if is_gpu
         geol_elevation = gpuArray(geol_elevation);
     end
+    geol_elevation(geol_elevation==hdr_dem.data_ignore_value) = nan;
     
     % ---------------------------------------------------------------------
     % northing easting to rover coordinate with no rotation
@@ -166,6 +169,10 @@ for li = 1:len_vl
         end
         lazyEnviWritel( out_file_path,single(deml_im),hdr_dem_imxy,l,'a');
     end
+    
+    dem_geo(li,:,1) = geo_northing(l);
+    dem_geo(li,:,2) = geo_easting(valid_samples);
+    dem_geo(li,:,3) = geol_elevation(valid_samples);
     
 end
 

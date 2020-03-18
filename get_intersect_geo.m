@@ -117,8 +117,8 @@ for li = 1:len_vl
     end
     
     % get supporting information from _imxy
-    geol_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l);
-    geolp1_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l+1);
+    geol_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l-hdr_dem_imxy.line_offset);
+    geolp1_imxy  = lazyEnviReadl(dem_imxy_img_path,hdr_dem_imxy,l-hdr_dem_imxy.line_offset+1);
     
     geol_imxy = reshape(permute(cat(3,geol_imxy,geolp1_imxy),[1,3,2]),[2,2*S_geo]);
     
